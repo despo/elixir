@@ -11,8 +11,10 @@ defmodule Kernel.DocTest do
 
     try do
       :file.make_dir(tmp)
-      Code.compiler_options(docs: true)
-      Code.compile_file_to_dir(path, tmp)
+
+      Code.compile [docs: true, output: tmp], fn ->
+        Code.compile_file(path)
+      end
       Code.prepend_path(tmp)
 
       assert_equal [], CompiledWithDocs.__info__(:data)
@@ -20,7 +22,6 @@ defmodule Kernel.DocTest do
       assert_equal expected, CompiledWithDocs.__info__(:docs)
       assert_equal { 1, "moduledoc" }, CompiledWithDocs.__info__(:moduledoc)
     after:
-      Code.compiler_options(docs: false)
       :os.cmd('rm -rf #{tmp}')
     end
   end

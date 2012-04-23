@@ -6,7 +6,13 @@
   argv=[],
   loaded=[],
   at_exit=[],
-  compiler_options=[]
+  compiler_options=[
+    {debug_info,false},
+    {discovery,[]},
+    {docs,false},
+    {ignore_module_conflict,false},
+    {output_dir,nil}
+  ]
 }).
 
 start_link() ->
@@ -14,7 +20,7 @@ start_link() ->
 
 init(_args) ->
   { ok, #elixir_code_server{} }.
-  
+
 handle_call({loaded, Path}, _From, Config) ->
   { reply, ok, Config#elixir_code_server{loaded=[Path|Config#elixir_code_server.loaded]} };
 
@@ -25,7 +31,9 @@ handle_call({argv, Argv}, _From, Config) ->
   { reply, ok, Config#elixir_code_server{argv=Argv} };
 
 handle_call({compiler_options, Options}, _From, Config) ->
-  { reply, ok, Config#elixir_code_server{compiler_options=Options} };
+  Old = Config#elixir_code_server.compiler_options,
+  New = orddict:merge(fun(_K, _V1, V2) -> V2 end, Old, Options),
+  { reply, ok, Config#elixir_code_server{compiler_options=normalize_compiler_options(New)} };
 
 handle_call(loaded, _From, Config) ->
   { reply, Config#elixir_code_server.loaded, Config };
@@ -55,3 +63,14 @@ terminate(Reason, Config) ->
 
 code_change(_Old, Config, _Extra) ->
   { ok, Config }.
+
+%% Helpers
+
+normalize_compiler_options(New0) ->
+  New1 = orddict:update(output_dir, fun to_char_list/1, New0),
+  New2 = orddict:update(discovery, fun(X) -> lists:map(fun to_char_list/1, X) end, New1),
+  New2.
+
+to_char_list(nil) -> nil;
+to_char_list(List) when is_list(List) -> List;
+to_char_list(Binary) when is_binary(Binary) -> binary_to_list(Binary).

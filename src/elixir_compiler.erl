@@ -1,5 +1,5 @@
 -module(elixir_compiler).
--export([get_opts/0, get_opt/1, get_opt/2, file/1, file_to_path/2]).
+-export([get_opts/0, get_opt/1, get_opt/2, file/1, file/2]).
 -export([core/0, module/3, eval_forms/4]).
 -include("elixir.hrl").
 
@@ -20,7 +20,9 @@ get_opts() ->
 
 %% Compile a file, return a tuple of module names and binaries.
 
-file(Relative) ->
+file(Relative) -> file(Relative, get_opts()).
+
+file(Relative, Options) ->
   Filename = filename:absname(Relative),
   Previous = get(elixir_compiled),
 
@@ -33,8 +35,10 @@ file(Relative) ->
 
     Forms = elixir_translator:forms(Contents, 1, Filename),
 
-    case get_opt(discovery) of
-      true ->
+    case get_opt(discovery, Options) of
+      [] ->
+        eval_forms(Forms, 1, Filename, #elixir_scope{filename=Filename});
+      _ ->
         Parent = self(),
         Child  = spawn_link(fun() ->
           process_flag(error_handler, elixir_error_handler),
@@ -44,21 +48,20 @@ file(Relative) ->
         receive
           { compiled, Child, Result } -> Result;
           { 'EXIT', Child, { Reason, Where } } -> erlang:raise(error, Reason, Where)
-        end;
-      false ->
-        eval_forms(Forms, 1, Filename, #elixir_scope{filename=Filename})
+        end
     end,
 
-    lists:reverse(get(elixir_compiled))
+    Modules = lists:reverse(get(elixir_compiled)),
+
+    case get_opt(output_dir, Options) of
+      nil -> [];
+      Dir -> [binary_to_path(X, Dir) || X <- Modules]
+    end,
+
+    Modules
   after
     put(elixir_compiled, Previous)
   end.
-
-%% Compiles a file to the given path (directory).
-
-file_to_path(File, Path) ->
-  Lists = file(File),
-  [binary_to_path(X, Path) || X <- Lists].
 
 %% Evaluates the contents/forms by compiling them to an Erlang module.
 
@@ -117,7 +120,7 @@ module(Forms, Filename, Options, Callback) ->
 
 core() ->
   elixir:start_app(),
-  gen_server:call(elixir_code_server, { compiler_options, [{internal,true}] }),
+  gen_server:call(elixir_code_server, { compiler_options, [{internal,true},{output_dir,"exbin"}] }),
   [core_file(File) || File <- core_main()],
   AllLists = [filelib:wildcard(Wildcard) || Wildcard <- core_list()],
   Files = lists:append(AllLists) -- core_main(),
@@ -330,8 +333,7 @@ make_dir(Current, [], Buffer) ->
 core_file(File) ->
   io:format("Compiling ~s~n", [File]),
   try
-    Lists = file(File),
-    [binary_to_path(X, "exbin") || X <- Lists]
+    file(File)
   catch
     Kind:Reason ->
       io:format("~p: ~p~nstacktrace: ~p~n", [Kind, Reason, erlang:get_stacktrace()]),

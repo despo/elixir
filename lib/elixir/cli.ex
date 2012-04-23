@@ -1,4 +1,4 @@
-defrecord Elixir.CLI.Config, commands: [], close: [],
+defrecord Elixir.CLI.Config, commands: [], close: [], discovery: [],
   output: '.', compile: false, halt: true, compiler_options: []
 
 defmodule Elixir.CLI do
@@ -185,7 +185,7 @@ defmodule Elixir.CLI do
 
   defp process_command({:compile, pattern}, config) do
     if File.dir?(pattern) do
-      compile_patterns ['#{pattern}/**/*'], config.merge_compiler_options(discovery: true)
+      compile_patterns ['#{pattern}/**/*'], config.prepend_discovery(pattern)
     else:
       compile_patterns [pattern], config
     end
@@ -195,11 +195,14 @@ defmodule Elixir.CLI do
     lines  = Enum.map lines, File.wildcard(&1)
     concat = List.uniq(List.concat(lines))
 
-    Code.compiler_options(config.compiler_options)
+    options = Keyword.merge config.compiler_options,
+      discovery: List.reverse(config.discovery), output_dir: config.output
 
-    Enum.map concat, fn(file) ->
-      IO.puts "Compiling #{to_binary(file)}"
-      Erlang.elixir_compiler.file_to_path(file, config.output)
+    Code.compile options, fn ->
+      Enum.map concat, fn(file) ->
+        IO.puts "Compiling #{to_binary(file)}"
+        Erlang.elixir_compiler.file(file)
+      end
     end
   end
 end
